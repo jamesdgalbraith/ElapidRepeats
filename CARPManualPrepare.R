@@ -33,6 +33,8 @@ carp_classified <- carp_fai %>%
   filter(grepl(":", seqnames)) %>%
   mutate(repeat_name = sub(".*:", "", seqnames))
 
+
+
 # set repbase LINE path
 repbase_path <- "~/Databases/RepBase/Separate15_2_20/"
 

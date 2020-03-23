@@ -3,12 +3,15 @@ suppressMessages(library(plyranges))
 suppressMessages(library(BSgenome))
 
 # set output folder
-genome_dir <- "~/Genomes/"
+genome_dir <- "~/Genomes/Reptiles/"
+
+genome_table <- read_tsv("snake_genomes.tsv", col_names = c("species_name", "genome_name"))
 
 # set variables
-species_name <- "Aipysurus_laevis"
-genome_name <- "assembly_20171114.fasta"
+species_name <- genome_table$species_name[j]
+genome_name <- genome_table$genome_name[j]
 print(species_name)
+num_threads <- 4
 
 # set and read in genome and index
 genome_path <- paste0(genome_dir, "/", species_name, "/", genome_name)
@@ -30,13 +33,15 @@ rm_fai <- tibble(seqnames = names(rm_seq), scaffold_length = as.double(width(rm_
 
 DNA_types <- rm_fai %>%
   filter(grepl("DNA", seqnames)) %>%
+  filter(scaffold_length > 500) %>%
   dplyr::select(seqnames) %>%
   mutate(seqnames = sub(".*#", "", seqnames))
 
 DNA_types_table <- tibble(names = names(table(DNA_types$seqnames)), count = table(DNA_types$seqnames))
 
 LINE_types <- rm_fai %>%
-  filter(grepl("#LINE", seqnames), scaffold_length > 2000) %>%
+  filter(grepl("#LINE", seqnames)) %>%
+  filter(scaffold_length > 1000) %>%
   dplyr::select(seqnames) %>%
   mutate(seqnames = sub(".*#", "", seqnames))
 
@@ -44,7 +49,7 @@ LINE_types_table <- tibble(names = names(table(LINE_types$seqnames)), count = ta
 
 LTR_types <- rm_fai %>%
   filter(grepl("#LTR", seqnames)) %>%
-  # filter(scaffold_length > 1000) %>%
+  filter(scaffold_length > 1000) %>%
   dplyr::select(seqnames) %>%
   mutate(seqnames = sub(".*#", "", seqnames))
 
@@ -52,8 +57,8 @@ LTR_types_table <- tibble(names = names(table(LTR_types$seqnames)), count = tabl
 
 ### Method to extract desired repeats
 rm_to_blast <- rm_fai %>%
-  filter(grepl("#LTR", seqnames)) %>%
-  filter(scaffold_length > 1000)
+  filter(grepl("#DNA", seqnames)) %>%
+  filter(scaffold_length > 500)
   
 rm_to_blast_ranges <- rm_to_blast %>%
   mutate(start = 1, end = scaffold_length, repeat_full_name = seqnames) %>%
@@ -88,7 +93,7 @@ names(rm_to_blast_seq) <- seqnames(rm_to_blast_ranges)
 
 Biostrings::writeXStringSet(x = rm_to_blast_seq, filepath = paste0("RepeatModeler/", species_name, "/curation/temp.fa"), append = F)
 
-rm_blast <- read_tsv(system(paste0("blastn -evalue 1e-50 -num_threads 4 -query RepeatModeler/", species_name, "/curation/temp.fa  -db ", genome_path, " -outfmt \"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovs\""), intern = T), col_names = c("qseqid", "seqnames", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qlen", "slen", "qcovs")) %>%
+rm_blast <- read_tsv(system(paste0("blastn -evalue 1e-50 -num_threads ", num_threads, " -query RepeatModeler/", species_name, "/curation/temp.fa  -db ", genome_path, " -outfmt \"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovs\""), intern = T), col_names = c("qseqid", "seqnames", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qlen", "slen", "qcovs")) %>%
   mutate(strand = case_when(sstart > send ~ "-", send > sstart ~ "+"),
          start = case_when(sstart < send ~ sstart, send < sstart ~ send),
          end = case_when(sstart > send ~ sstart, send > sstart ~ send))
@@ -107,8 +112,8 @@ for(i in 1:length(rm_to_blast_seq)){
     # flank5 <- 4500
     # flank3 <- 1500
   # } else {
-    flank5 <- 4000
-    flank3 <- 4000
+    flank5 <- 2000
+    flank3 <- 2000
   # }
   
   if(nrow(rm_blast_bed) < 3){
@@ -134,6 +139,6 @@ for(i in 1:length(rm_to_blast_seq)){
   
   Biostrings::writeXStringSet(x = rm_blast_seq, filepath = paste0("RepeatModeler/", species_name, "/curation/temp.fa"), append = F)
   
-  system(paste0("mafft --thread 4 RepeatModeler/", species_name, "/curation/temp.fa > RepeatModeler/", species_name, "/curation/", species_name, "_", sub("\\/", "_", rm_to_blast_ranges$repeat_full_name[i]), ".fa"))
+  system(paste0("mafft --thread ", num_threads, " RepeatModeler/", species_name, "/curation/temp.fa > RepeatModeler/", species_name, "/curation/", species_name, "_", sub("\\/", "_", rm_to_blast_ranges$repeat_full_name[i]), ".fa"))
   
 }
