@@ -13,7 +13,7 @@ getTrueWidth <- function(df){
     ## Make sure you retain every single column that you may possibly need
     tibble(
       seqnames = unique(seqlevels(x)),
-      width = reduce(x) %>% width %>% sum(), # this step is the reduction
+      width = IRanges::reduce(x) %>% width %>% sum(), # this step is the reduction
       database = unique(x$database),
       abbreviation = unique(x$abbreviation), 
       slen = unique(x$slen)
@@ -30,7 +30,7 @@ cdd_codes <- read_tsv("~/Databases/localrpsb/names_codes_db.tsv", col_names = c(
 genome_dir <- "~/Genomes/Reptiles/"
 
 genome_table <- read_tsv("snake_genomes.tsv", col_names = c("species_name", "genome_name"))
-
+i=1
 species_name <- genome_table$species_name[i]
 genome_name <- genome_table$genome_name[i]
 print(species_name)
@@ -65,14 +65,17 @@ carp_rps <- read_tsv(paste0("CARP/", species_name, "/", species_name, "_rps.out"
                          qend > qstart ~ qend),
          code = as.double(code)) %>%
   select(-x, -y) %>%
-  inner_join(cdd_codes)
+  inner_join(cdd_codes) %>%
+  mutate(ID = sub("#.*", "", seqnames), ID = sub(":.*", "", ID))
 
 # convert rps_out to list
 # listed_rm_rps_out <- rm_rps %>%
 #   mutate(ID = str_remove_all(seqnames, "\\#.+")) %>% split(f = .$ID)
 
+single_rps <- carp_rps %>% filter(seqnames == "family000201_consensus:Gypsy-8_AMi-I")
+
 listed_carp_rps_out <- carp_rps %>%
-  mutate(ID = sub("#.*", "", seqnames), ID = sub(":.*", "", ID)) %>% split(f = .$ID)
+  split(f = .$ID)
 
 # rm_rps %>% dplyr::select(seqnames, abbreviation) %>% filter(grepl("Unknown", seqnames))
 
