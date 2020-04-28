@@ -1,8 +1,6 @@
 library(tidyverse)
 library(Biostrings)
 
-
-
 # set query and genome
 genome_path <- "~/Genomes/Reptiles/Aipysurus_laevis/kmer_49.pilon_x2.sorted.fasta"
 query_repeat <- "Aipysurus_laevis_family148002#LINE_CR1.fasta"
