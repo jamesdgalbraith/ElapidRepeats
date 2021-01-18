@@ -2,17 +2,17 @@ suppressMessages(library(tidyverse))
 suppressMessages(library(plyranges))
 suppressMessages(library(BSgenome))
 
-num_threads <- 8
+num_threads <- 12
 
 # set output folder
 genome_dir <- "~/Genomes/Reptiles/"
 
 genome_table <- read_tsv("snake_genomes.tsv", col_names = c("species_name", "genome_name"))
 
-flank5 <- 3000
-flank3 <- 3000
+flank5 <- 5000
+flank3 <- 5000
 
-for(j in c(1, 2, 3, 4, 9)){
+for(j in c(1:11)){
 
 # set variables
 species_name <- genome_table$species_name[j]
@@ -57,30 +57,23 @@ self_blast <- readr::read_tsv(system(paste0("blastn -evalue 1e-50 -query RepeatM
 redundant <- self_blast %>%
   filter(qseqid != seqnames) %>%
   filter(pident >= 94) %>%
-  filter(qcovs > 80) %>%
+  filter(qcovs > 50) %>%
   filter(qlen < slen) %>%
   select(qseqid, qlen) %>%
   base::unique()
 
 nonredundant_ranges <- rm_to_blast %>%
-  filter(scaffold_length < 150, !seqnames %in% redundant$qseqid) %>%
+  filter(!seqnames %in% redundant$qseqid) %>%
   mutate(start = 1, end = scaffold_length,
-         names = ifelse(grepl("ltr", seqnames, ignore.case = F), sub("#.*", "LTR/Unknown", seqnames), seqnames)) %>%
+         names = ifelse(grepl("ltr", seqnames) & !grepl("LTR", seqnames), sub("#.*", "#Unknown", seqnames), seqnames)) %>%
   as_granges()
   
 nonredundant_seq <- getSeq(rm_seq, nonredundant_ranges)
 names(nonredundant_seq) <- nonredundant_ranges$names
 
-rm_to_blast_ranges <- rm_fai %>%
-  filter(!seqnames %in% redundant$qseqid, scaffold_length >= 150) %>%
-  mutate(start = 1, end = scaffold_length) %>%
-  mutate(repeat_full_name = ifelse((grepl("ltr", seqnames, ignore.case = F) & !grepl("LTR", seqnames, ignore.case = F) & !grepl("ERV", seqnames, ignore.case = F)),
-                                   sub("#.*", "LTR/Unknown", seqnames), seqnames)) %>%
-  as_granges()
+rm_to_blast_seq <- Biostrings::getSeq(rm_seq, nonredundant_ranges)
 
-rm_to_blast_seq <- Biostrings::getSeq(rm_seq, rm_to_blast_ranges)
-
-names(rm_to_blast_seq) <- rm_to_blast_ranges$repeat_full_name
+names(rm_to_blast_seq) <- nonredundant_ranges$names
 
 Biostrings::writeXStringSet(x = rm_to_blast_seq, filepath = paste0("RepeatModeler/", species_name, "/curation/temp.fa"), append = F)
 
@@ -90,33 +83,33 @@ rm_blast <- read_tsv(system(paste0("blastn -evalue 1e-50 -num_threads ", num_thr
          end = case_when(sstart > send ~ sstart, send > sstart ~ send)) %>%
   filter(length >= 0.4*qlen, pident > 80)
 
-nonredundant_seq <- c(nonredundant_seq, rm_to_blast_seq[!names(rm_to_blast_seq) %in% rm_blast$qseqid])
+rm_blast_hits <- tibble(qseqid = names(table(rm_blast$qseqid)), n = as.integer(table(rm_blast$qseqid))) %>%
+  filter(n > 2)
 
-rm_blast_hits <- base::unique(rm_blast$qseqid)
+rm_blast_few_hits <- tibble(qseqid = names(table(rm_blast$qseqid)), n = as.integer(table(rm_blast$qseqid))) %>%
+  filter(n <= 2)
 
-for(i in 1:length(rm_blast_hits)){
+for(i in 1:length(rm_blast_hits$qseqid)){
   
-  print(rm_blast_hits[i])
+  print(rm_blast_hits$qseqid[i])
   
   rm_blast_bed <- rm_blast %>%
-    filter(qseqid == rm_blast_hits[i]) %>%
+    filter(qseqid == rm_blast_hits$qseqid[i]) %>%
     arrange(-bitscore)
   
-    if(nrow(rm_blast_bed) < 3){
-      nonredundant_seq <- c(nonredundant_seq, rm_to_blast_seq[names(rm_to_blast_seq) == rm_blast_hits[i]])
-    next()
-  } else if(nrow(rm_blast_bed) > 30){
+  if(nrow(rm_blast_bed) > 30){
     rm_blast_bed <- rm_blast_bed %>%
       dplyr::slice(1:30)
   }
   
   rm_blast_bed <- rm_blast_bed %>%
-    mutate(start = case_when(strand == "+" ~ start - flank5, strand == "-" ~ start - flank3),
-           end = case_when(strand == "-" ~ end + flank5, strand == "+" ~ end + flank3),
+    mutate(start = ifelse(strand == "+", start - flank5, start - flank3),
+           end = ifelse(strand == "+", end + flank5, end + flank3),
            start = case_when(start <= 1 ~ 1, start > 1 ~ start),
            end = case_when(end > slen ~ slen, end <= slen ~ end)) %>%
     dplyr::select(seqnames, start, end, strand) %>%
-    as_granges()
+    as_granges() %>%
+    reduce()
   
   rm_blast_seq <- Biostrings::getSeq(genome_seq, rm_blast_bed)
   
@@ -130,9 +123,7 @@ for(i in 1:length(rm_blast_hits)){
     dplyr::filter(qseqid != seqnames)
   
   if(nrow(repeat_self_ranges) <1){
-    writeXStringSet(x = rm_to_blast_seq[names(rm_to_blast_seq) == rm_blast_hits[i]],
-                    filepath = paste0("RepeatModeler/", species_name, "/curation/", species_name, "_", sub("\\/", "_", rm_blast_hits[i]), ".fa"))
-    next()
+   next()
   }
   
   repeat_self_ranges <- repeat_self_ranges %>%
@@ -150,16 +141,16 @@ for(i in 1:length(rm_blast_hits)){
   rm_blast_seq <- getSeq(rm_blast_seq, repeat_self_ranges)
   names(rm_blast_seq) <- paste0(seqnames(repeat_self_ranges), "#(", ranges(repeat_self_ranges), ")")
   
-  rm_blast_seq <- c(rm_to_blast_seq[names(rm_to_blast_seq) == rm_blast_hits[i]], rm_blast_seq)
+  rm_blast_seq <- c(rm_to_blast_seq[names(rm_to_blast_seq) == rm_blast_hits$qseqid[i]], rm_blast_seq)
   
   Biostrings::writeXStringSet(x = rm_blast_seq, filepath = paste0("RepeatModeler/", species_name, "/curation/temp.fa"), append = F)
   
-  system(paste0("mafft --localpair --thread ", num_threads, " RepeatModeler/", species_name, "/curation/temp.fa > RepeatModeler/", species_name, "/curation/", species_name, "_", sub("\\/", "_", rm_blast_hits[i]), ".fa"))
+  system(paste0("mafft --localpair --thread ", num_threads, " RepeatModeler/", species_name, "/curation/temp.fa > RepeatModeler/", species_name, "/curation/", species_name, "_", sub("\\/", "_", rm_blast_hits$qseqid[i]), ".fa"))
   
 }
 
-names(nonredundant_seq) <- paste0(species_name, "_", names(nonredundant_seq))
-writeXStringSet(nonredundant_seq, paste0("RepeatModeler/", species_name, "_nonredundant.fasta"))
+# names(nonredundant_seq) <- paste0(species_name, "_", names(nonredundant_seq))
+# writeXStringSet(nonredundant_seq, paste0("RepeatModeler/", species_name, "_nonredundant.fasta"))
 
 
 }
