@@ -3,21 +3,24 @@ library(GenomicRanges)
 library(BSgenome)
 library(plyranges)
 
-species_list <- read_tsv("~/Genomes/Birds/bird_genomes.tsv", col_names = c("species_name", "genome_name"))
+genome_dir <- "~/Genomes/Reptiles/"
 
-repeat_name <- "Phylloscopus_trochilus_acredula_family004041"
+genome_table <- read_tsv("snake_genomes.tsv", col_names = c("species_name", "genome_name"))
 
-i=100
+repeat_name <- "Laticauda_colubrina_ltr-1_family-332#DNA_TcMar-Tc2"
 
-blast_search <- read_tsv(system(paste0("blastn -query second_rnd/", repeat_name, ".fasta -db ~/Genomes/Birds/", species_list$species_name[i], "/", species_list$genome_name[i], " -outfmt \"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qcovs qlen slen\" -num_threads 12"), intern = T), col_names = c("qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qcovs", "qlen", "slen"))
+i=5
 
-flank5 = 2000
-flank3 = 20
+blast_search <- read_tsv(system(paste0("blastn -query ", repeat_name, ".fasta -db ", genome_dir, "/", genome_table$species_name[i], "/", genome_table$genome_name[i], " -outfmt \"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qcovs qlen slen\" -num_threads 12"), intern = T), col_names = c("qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qcovs", "qlen", "slen"))
+
+flank5 = 1000
+flank3 = 1000
 
 filtered_blast_search <- blast_search %>%
   dplyr::arrange(-bitscore) %>%
-  dplyr::filter(pident >= 90) %>%
-  dplyr::filter(length >= 1000) %>%
+  # dplyr::filter(pident >= 90) %>%
+  dplyr::filter(length >= 500) %>%
+  dplyr::slice(1:30) %>%
   dplyr::mutate(start = ifelse(sstart < send, sstart, send),
                 end = ifelse(sstart > send, sstart, send),
                 strand = ifelse(sstart < send, "+", "-")) %>%
@@ -37,10 +40,10 @@ if(length(filtered_blast_ranges) > 30){
   filtered_blast_ranges <- filtered_blast_ranges[1:30]
   }
   
-genome_seq <- readDNAStringSet(paste0("~/Genomes/Birds/", species_list$species_name[i], "/", species_list$genome_name[i]))
+genome_seq <- readDNAStringSet(paste0(genome_dir, "/", genome_table$species_name[i], "/", genome_table$genome_name[i]))
 names(genome_seq) <- sub( " .*", "", names(genome_seq))
 
-consensus_seq <- readDNAStringSet(paste0("second_rnd/", repeat_name, ".fasta"))
+consensus_seq <- readDNAStringSet(paste0(repeat_name, ".fasta"))
 
 filtered_blast_seq <- getSeq(genome_seq, filtered_blast_ranges)
 
@@ -48,7 +51,7 @@ names(filtered_blast_seq) <- paste0(seqnames(filtered_blast_ranges), ":", ranges
 
 filtered_blast_seq <- c(consensus_seq, filtered_blast_seq)
 
-writeXStringSet(filtered_blast_seq, "second_rnd/temp.fa")
+writeXStringSet(filtered_blast_seq, "temp.fa")
   
-system(paste0("mafft --localpair --adjustdirection --thread 12 second_rnd/temp.fa > second_rnd/", repeat_name, "_aln.fasta"))
+system(paste0("mafft --thread 12 temp.fa > ", repeat_name, "_aln.fasta"))
 

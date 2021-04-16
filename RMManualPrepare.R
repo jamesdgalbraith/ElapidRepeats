@@ -11,7 +11,7 @@ genome_table <- read_tsv("snake_genomes.tsv", col_names = c("species_name", "gen
 
 flank5 <- 5000
 flank3 <- 5000
-
+# j=5
 for(j in c(1:11)){
 
 # set variables
@@ -57,7 +57,7 @@ self_blast <- readr::read_tsv(system(paste0("blastn -evalue 1e-50 -query RepeatM
 redundant <- self_blast %>%
   filter(qseqid != seqnames) %>%
   filter(pident >= 94) %>%
-  filter(qcovs > 50) %>%
+  filter(qcovs > 80) %>%
   filter(qlen < slen) %>%
   select(qseqid, qlen) %>%
   base::unique()
@@ -77,7 +77,7 @@ names(rm_to_blast_seq) <- nonredundant_ranges$names
 
 Biostrings::writeXStringSet(x = rm_to_blast_seq, filepath = paste0("RepeatModeler/", species_name, "/curation/temp.fa"), append = F)
 
-rm_blast <- read_tsv(system(paste0("blastn -evalue 1e-50 -num_threads ", num_threads, " -query RepeatModeler/", species_name, "/curation/temp.fa  -db ", genome_path, " -outfmt \"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovs\""), intern = T), col_names = c("qseqid", "seqnames", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qlen", "slen", "qcovs")) %>%
+rm_blast <- read_tsv(system(paste0("blastn -task dc-megablast -evalue 1e-50 -num_threads ", num_threads, " -query RepeatModeler/", species_name, "/curation/temp.fa  -db ", genome_path, " -outfmt \"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovs\""), intern = T), col_names = c("qseqid", "seqnames", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qlen", "slen", "qcovs")) %>%
   mutate(strand = case_when(sstart > send ~ "-", send > sstart ~ "+"),
          start = case_when(sstart < send ~ sstart, send < sstart ~ send),
          end = case_when(sstart > send ~ sstart, send > sstart ~ send)) %>%
